@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NYC Street Flood Explorer</title>
+<meta name="description" content="Explore every street flood recorded by FloodNet NYC sensors: where it floods, how deep, how often, and what the City is doing about it.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="plans.js"></script>
+</head>
+<body>
+<header class="site-head">
+  <div class="wrap head-row">
+    <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true"></span>Street Flood Explorer</a>
+    <nav aria-label="Sections">
+      <a href="#map">Map</a>
+      <a href="#calendar">Calendar</a>
+      <a href="#replay">Storm replay</a>
+      <a href="#kinds">Rain vs tide</a>
+      <a href="#plans">City plans</a>
+      <a href="#data">Data</a>
+    </nav>
+    <button id="themeBtn" class="ghost" type="button" aria-label="Toggle dark mode">◐</button>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero wrap">
+    <p class="eyebrow">FloodNet NYC · sensor data since 2020</p>
+    <h1>When New York's streets flood, these sensors are watching.</h1>
+    <p class="lede">FloodNet is a network of small sensors on street signs across all five boroughs. Each one checks the water depth below it every minute. Use this page to see where streets flood, how deep the water gets, how often it happens, and what the City is doing about it.</p>
+    <div class="tiles" id="tiles"></div>
+    <p class="note" id="builtNote"></p>
+  </section>
+
+  <section class="band" id="depth">
+    <div class="wrap two-col">
+      <div>
+        <h2>How deep is "flooded"?</h2>
+        <p>A flood event starts when water collects under a sensor and ends when it drains away. Most events are shallow. But one inch of street water at the wrong moment can still pour into a basement apartment.</p>
+        <ul class="bands" id="depthBands"></ul>
+        <p class="note">Driving thresholds are from the National Weather Service's <a href="https://www.weather.gov/safety/flood-turn-around-dont-drown" target="_blank" rel="noopener">"Turn Around, Don't Drown"</a> guidance.</p>
+      </div>
+      <figure class="card">
+        <figcaption>Every flood FloodNet has recorded, by its deepest point. The figure is drawn to scale.</figcaption>
+        <div id="ruler" class="chart"></div>
+      </figure>
+    </div>
+  </section>
+
+  <section class="wrap" id="map">
+    <h2>Find floods near you</h2>
+    <p>Each circle is a sensor, and bigger circles have flooded more often. Search an address, or tap a sensor to see its full history and the City projects nearby.</p>
+    <div class="controls">
+      <form id="geoForm" class="search" role="search">
+        <label class="sr" for="geoInput">Address or place</label>
+        <input id="geoInput" type="search" placeholder="Type an NYC address, e.g. 90-01 183rd St, Queens" autocomplete="off">
+        <button type="submit">Find</button>
+      </form>
+      <div class="seg" role="group" aria-label="Flood type">
+        <button data-type="all" class="on">All floods</button>
+        <button data-type="rain">Rain-driven</button>
+        <button data-type="tidal">Tidal</button>
+      </div>
+      <div class="seg" role="group" aria-label="Color by">
+        <button data-color="depth" class="on">Color: deepest</button>
+        <button data-color="count">Color: how often</button>
+      </div>
+    </div>
+    <div class="map-layout">
+      <div id="mapEl" class="map" aria-label="Map of FloodNet sensors"></div>
+      <aside id="sensorPanel" class="panel" aria-live="polite">
+        <div class="panel-empty">
+          <h3>Pick a sensor</h3>
+          <p>Tap any circle on the map. Or try one of these:</p>
+          <div id="quickPicks" class="chips"></div>
+        </div>
+      </aside>
+    </div>
+    <div class="legend-row" id="mapLegend"></div>
+  </section>
+
+  <section class="band" id="calendar">
+    <div class="wrap">
+      <h2>The flood calendar</h2>
+      <p>Each square is one day. Stronger color means more sensors reported flooding that day. Look for the steady speckle of high-tide floods and the bursts of big storms. Tap any colored day to replay it on the map below.</p>
+      <div class="controls">
+        <div class="seg" role="group" aria-label="Calendar flood type">
+          <button data-cal="all" class="on">All floods</button>
+          <button data-cal="rain">Rain-driven</button>
+          <button data-cal="tidal">Tidal</button>
+        </div>
+      </div>
+      <div id="calendarEl" class="chart calendar"></div>
+      <div class="legend-row" id="calLegend"></div>
+    </div>
+  </section>
+
+  <section class="wrap" id="replay">
+    <h2>Storm replay</h2>
+    <p>Watch a storm move across the city, minute by minute, from the sensors' own readings. Pick a storm, then press play.</p>
+    <div class="controls">
+      <label class="sel">Storm <select id="stormSelect"></select></label>
+      <button id="playBtn" type="button" class="primary">▶ Play</button>
+      <input id="timeSlider" type="range" min="0" max="100" value="0" aria-label="Replay time">
+      <span id="clock" class="clock">—</span>
+    </div>
+    <div class="replay-layout">
+      <div id="replayMap" class="map" aria-label="Storm replay map"></div>
+      <div class="replay-side">
+        <div class="stat-inline" id="replayStats"></div>
+        <figure class="card tight">
+          <figcaption>Sensors under water</figcaption>
+          <div id="replayCount" class="chart"></div>
+        </figure>
+        <figure class="card tight">
+          <figcaption>Rain per hour, Central Park (modeled)</figcaption>
+          <div id="replayRain" class="chart"></div>
+        </figure>
+        <p class="note">Rainfall comes from a weather model for a single point in Central Park. It can miss a downpour that hits only one neighborhood.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="kinds">
+    <div class="wrap">
+      <h2>Two kinds of flooding</h2>
+      <p>Not every flood comes from rain. Along Jamaica Bay, City Island, and Staten Island's shore, high tides push water up through storm drains and over bulkheads, sometimes on sunny days. These floods follow the moon's schedule. Rain floods follow the weather. Each kind needs a different fix.</p>
+      <div class="grid2">
+        <figure class="card">
+          <figcaption>Floods by month</figcaption>
+          <div id="byMonth" class="chart"></div>
+        </figure>
+        <figure class="card">
+          <figcaption>Floods by hour of the day</figcaption>
+          <div id="byHour" class="chart"></div>
+        </figure>
+      </div>
+      <div class="legend-row" id="kindLegend"></div>
+      <div class="grid2" style="margin-top:20px">
+        <figure class="card">
+          <figcaption>Share of floods on days with almost no rain (under 0.05 in. in Central Park)</figcaption>
+          <div id="dryShare" class="chart"></div>
+        </figure>
+        <div class="callout" id="kindCallout"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap" id="anatomy">
+    <h2>How fast does the water come and go?</h2>
+    <p>Every flood has a shape: water rises to a peak, then drains. If it rises fast, the sewers were overwhelmed in minutes. If it drains slowly, the water had nowhere to go. Tap any dot to see the full shape of that flood.</p>
+    <div class="grid2 wide-left">
+      <figure class="card">
+        <figcaption>Each dot is one flood: time to peak vs. time to drain. Both axes use a log scale.</figcaption>
+        <div id="scatter" class="chart"></div>
+        <div class="legend-row" id="scatterLegend"></div>
+      </figure>
+      <figure class="card">
+        <figcaption id="profileTitle">The shape of one flood</figcaption>
+        <div id="profile" class="chart"></div>
+        <p class="note" id="profileNote"></p>
+      </figure>
+    </div>
+  </section>
+
+  <section class="band" id="hoods">
+    <div class="wrap">
+      <h2>Neighborhoods</h2>
+      <p>Floods per sensor-year adjusts for how many sensors an area has and how long they've been up. That keeps a neighborhood with ten sensors from looking ten times worse than one with a single sensor.</p>
+      <div class="controls">
+        <div class="seg" role="group" aria-label="Neighborhood flood type">
+          <button data-hood="all" class="on">All floods</button>
+          <button data-hood="rain">Rain-driven</button>
+          <button data-hood="tidal">Tidal</button>
+        </div>
+        <label class="sel">Borough <select id="hoodBoro"><option value="">All boroughs</option></select></label>
+      </div>
+      <div class="table-wrap"><table id="hoodTable" class="data"></table></div>
+    </div>
+  </section>
+
+  <section class="wrap" id="311">
+    <h2>Sensors vs. 311 calls</h2>
+    <p>Before FloodNet, the City learned about street flooding mostly from 311 calls, often after the damage was done. Sensors report on their own, every minute, including at night and in places where people rarely call.</p>
+    <div class="grid2 wide-left">
+      <figure class="card">
+        <figcaption>Each dot is one day with rain-driven flooding: sensors that flooded vs. 311 street-flooding calls citywide</figcaption>
+        <div id="vs311" class="chart"></div>
+      </figure>
+      <div class="callout" id="callout311"></div>
+    </div>
+  </section>
+
+  <section class="band" id="growth">
+    <div class="wrap">
+      <h2>A growing network</h2>
+      <p>The number of recorded floods has climbed, but much of that is because there are more sensors to see them. Compare the two charts. The second counts floods per active sensor.</p>
+      <div class="grid2">
+        <figure class="card">
+          <figcaption>Active sensors</figcaption>
+          <div id="activeChart" class="chart"></div>
+        </figure>
+        <figure class="card">
+          <figcaption>Rain-driven floods per active sensor, by year</figcaption>
+          <div id="perSensorChart" class="chart"></div>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap" id="plans">
+    <h2>What the City is doing</h2>
+    <p>NYC is working on flooding in several ways: bigger sewers, "cloudburst" sponge projects, green infrastructure, coastal walls and raised shorelines, and better warnings. Filter by borough, or tap a sensor on the map to see projects that apply there.</p>
+    <div class="controls">
+      <label class="sel">Borough <select id="planBoro"><option value="">All boroughs</option></select></label>
+      <div class="seg" role="group" aria-label="Plan type" id="planKinds"></div>
+    </div>
+    <div class="plan-grid" id="planGrid"></div>
+    <p class="note">Status and dollar figures come from City press releases, DEP pages, and Council testimony, checked November 2026. Where sources disagree we give a range. Follow each link for the latest.</p>
+  </section>
+
+  <section class="band" id="act">
+    <div class="wrap">
+      <h2>What you can do</h2>
+      <div class="steps" id="stepsGrid"></div>
+    </div>
+  </section>
+
+  <section class="wrap" id="why">
+    <h2>How FloodNet helps NYC</h2>
+    <div class="why-grid">
+      <div><h3>Warnings in real time</h3><p>NYC Emergency Management and the National Weather Service see sensor readings as floods happen, which helps them target warnings and send crews.</p></div>
+      <div><h3>Proof that fixes work</h3><p>A sensor that floods before a new sewer or cloudburst project, and stops flooding after, is direct evidence the money worked. Sensors are already in place near many planned projects.</p></div>
+      <div><h3>Seeing tidal flooding</h3><p>Sunny-day tidal floods rarely make the news. The sensors show they happen dozens of times a year in parts of Queens, the Bronx, and Staten Island.</p></div>
+      <div><h3>Community-chosen locations</h3><p>Residents can <a href="https://arcg.is/0vGbmW" target="_blank" rel="noopener">suggest a sensor location</a>. The data is free to everyone.</p></div>
+    </div>
+  </section>
+
+  <section class="band" id="data">
+    <div class="wrap">
+      <h2>Get the data</h2>
+      <div class="grid2">
+        <div>
+          <h3>Open data used here</h3>
+          <ul class="links">
+            <li><a href="https://data.cityofnewyork.us/d/aq7i-eu5q" target="_blank" rel="noopener">FloodNet: Street Flooding Events</a>. One row per flood, with the full depth curve (NYC Open Data, updated every 2 weeks).</li>
+            <li><a href="https://data.cityofnewyork.us/d/kb2e-tjy3" target="_blank" rel="noopener">FloodNet: Sensor Deployment Metadata</a>. Location, install date, and whether the site is tidal.</li>
+            <li><a href="https://data.cityofnewyork.us/d/erm2-nwe9" target="_blank" rel="noopener">311 Service Requests</a>. Sewer complaints for street flooding, clogged catch basins, and highway flooding.</li>
+            <li><a href="https://open-meteo.com/en/docs/historical-weather-api" target="_blank" rel="noopener">Open-Meteo historical weather</a>. Modeled hourly rain for Central Park.</li>
+            <li><a href="https://www.floodnet.nyc" target="_blank" rel="noopener">floodnet.nyc</a> and the <a href="https://dataviz.floodnet.nyc" target="_blank" rel="noopener">live FloodNet dashboard</a>.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Things to know</h3>
+          <ul class="links">
+            <li>A flood event is a run of readings deeper than 10 mm (about 0.4 in.). The FloodNet team checks every event before publishing it.</li>
+            <li>The sensors measure water directly below them, at one point on one street. Nearby blocks can be deeper or drier.</li>
+            <li>Rain-driven vs. tidal on this page uses the "tidally influenced" flag on each sensor. A tidal site can still flood from rain.</li>
+            <li>Times are shown in New York time. The published data uses GMT.</li>
+            <li>Please cite: Mydlarz et al. (2024), <a href="https://doi.org/10.1029/2023WR036806" target="_blank" rel="noopener"><i>Water Resources Research</i> 60, e2023WR036806</a>, and FloodNet (NYU & CUNY).</li>
+          </ul>
+        </div>
+      </div>
+      <p class="note">Built with open data from FloodNet NYC (NYU, CUNY, and NYC DEP, MOCEJ, and OTI). This page is not an official City or FloodNet product. The source code and data pipeline are on <a href="https://github.com/CrumpLabSandbox/FloodNetDash" target="_blank" rel="noopener">GitHub</a>.</p>
+    </div>
+  </section>
+</main>
+
+<div id="tip" class="tip" role="tooltip" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
